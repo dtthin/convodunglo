@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Heart Animation</title>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background-color: black;
+    }
+    canvas {
+      background-color: black;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="heartCanvas"></canvas>
+
+  <script>
+    const CANVAS_WIDTH = window.innerWidth;
+    const CANVAS_HEIGHT = window.innerHeight;
+    const CANVAS_CENTER_X = CANVAS_WIDTH / 2;
+    const CANVAS_CENTER_Y = CANVAS_HEIGHT / 2;
+    const IMAGE_ENLARGE = Math.min(CANVAS_WIDTH, CANVAS_HEIGHT) / 50;
+
+    function heartFunction(t, shrinkRatio = IMAGE_ENLARGE) {
+      let x = 16 * Math.pow(Math.sin(t), 3);
+      let y = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
+      x *= shrinkRatio;
+      y *= shrinkRatio;
+      x += CANVAS_CENTER_X;
+      y += CANVAS_CENTER_Y;
+      return { x: Math.round(x), y: Math.round(y) };
+    }
+
+    function scatterInside(x, y, beta = 0.15) {
+      let ratioX = -beta * Math.log(Math.random());
+      let ratioY = -beta * Math.log(Math.random());
+      let dx = ratioX * (x - CANVAS_CENTER_X);
+      let dy = ratioY * (y - CANVAS_CENTER_Y);
+      return { x: x - dx, y: y - dy };
+    }
+
+    function shrink(x, y, ratio) {
+      let force = -1 / Math.pow(Math.pow(x - CANVAS_CENTER_X, 2) + Math.pow(y - CANVAS_CENTER_Y, 2), 0.6);
+      let dx = ratio * force * (x - CANVAS_CENTER_X);
+      let dy = ratio * force * (y - CANVAS_CENTER_Y);
+      return { x: x - dx, y: y - dy };
+    }
+
+    function curve(p) {
+      return 2 * (2 * Math.sin(4 * p)) / (2 * Math.PI);
+    }
+
+    class Heart {
+      constructor(generateFrame = 20) {
+        this._points = new Set();
+        this._edgeDiffusionPoints = new Set();
+        this._centerDiffusionPoints = new Set();
+        this.allPoints = {};
+        this.build(2000);
+        this.randomHalo = 1000;
+        this.generateFrame = generateFrame;
+        for (let frame = 0; frame < generateFrame; frame++) {
+          this.calc(frame);
+        }
+      }
+
+      build(number) {
+        for (let i = 0; i < number; i++) {
+          let t = Math.random() * 2 * Math.PI;
+          let { x, y } = heartFunction(t);
+          this._points.add({ x, y });
+        }
+        this._points.forEach(({ x, y }) => {
+          for (let i = 0; i < 3; i++) {
+            let { x: nx, y: ny } = scatterInside(x, y, 0.05);
+            this._edgeDiffusionPoints.add({ x: nx, y: ny });
+          }
+        });
+        let pointList = Array.from(this._points);
+        for (let i = 0; i < 4000; i++) {
+          let { x, y } = pointList[Math.floor(Math.random() * pointList.length)];
+          let { x: nx, y: ny } = scatterInside(x, y, 0.17);
+          this._centerDiffusionPoints.add({ x: nx, y: ny });
+        }
+      }
+
+      static calcPosition(x, y, ratio) {
+        let force = 1 / Math.pow(Math.pow(x - CANVAS_CENTER_X, 2) + Math.pow(y - CANVAS_CENTER_Y, 2), 0.52);
+        let dx = ratio * force * (x - CANVAS_CENTER_X) + (Math.random() * 2 - 1);
+        let dy = ratio * force * (y - CANVAS_CENTER_Y) + (Math.random() * 2 - 1);
+        return { x: x - dx, y: y - dy };
+      }
+
+      calc(generateFrame) {
+        let ratio = 10 * curve(generateFrame / 10 * Math.PI);
+        let haloRadius = Math.floor(4 + 6 * (1 + curve(generateFrame / 10 * Math.PI)));
+        let haloNumber = Math.floor(3000 + 4000 * Math.abs(Math.pow(curve(generateFrame / 10 * Math.PI), 2)));
+        let allPoints = [];
+        let heartHaloPoint = new Set();
+        for (let i = 0; i < haloNumber; i++) {
+          let t = Math.random() * 2 * Math.PI;
+          let { x, y } = heartFunction(t, 11.6);
+          let { x: sx, y: sy } = shrink(x, y, haloRadius);
+          if (!heartHaloPoint.has(`${sx},${sy}`)) {
+            heartHaloPoint.add(`${sx},${sy}`);
+            sx += Math.floor(Math.random() * 28 - 14);
+            sy += Math.floor(Math.random() * 28 - 14);
+            let size = Math.floor(Math.random() * 2) + 1;
+            allPoints.push({ x: sx, y: sy, size });
+          }
+        }
+        this._points.forEach(({ x, y }) => {
+          let { x: nx, y: ny } = Heart.calcPosition(x, y, ratio);
+          let size = Math.floor(Math.random() * 3) + 1;
+          allPoints.push({ x: nx, y: ny, size });
+        });
+        this._edgeDiffusionPoints.forEach(({ x, y }) => {
+          let { x: nx, y: ny } = Heart.calcPosition(x, y, ratio);
+          let size = Math.floor(Math.random() * 2) + 1;
+          allPoints.push({ x: nx, y: ny, size });
+        });
+        this._centerDiffusionPoints.forEach(({ x, y }) => {
+          let { x: nx, y: ny } = Heart.calcPosition(x, y, ratio);
+          let size = Math.floor(Math.random() * 2) + 1;
+          allPoints.push({ x: nx, y: ny, size });
+        });
+        this.allPoints[generateFrame] = allPoints;
+      }
+
+      render(ctx, frame, color) {
+        this.allPoints[frame % this.generateFrame].forEach(({ x, y, size }) => {
+          ctx.fillStyle = color;
+          ctx.fillRect(x, y, size, size);
+        });
+      }
+    }
+
+    function draw(ctx, heart, frame = 0) {
+      ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+      const color = 'rgb(255, 105, 180)';
+      heart.render(ctx, frame, color);
+      setTimeout(() => draw(ctx, heart, frame + 1), 80); // nhanh hơn
+    }
+
+    window.onload = function () {
+      const canvas = document.getElementById('heartCanvas');
+      canvas.width = CANVAS_WIDTH;
+      canvas.height = CANVAS_HEIGHT;
+      const ctx = canvas.getContext('2d');
+      const heart = new Heart();
+      draw(ctx, heart);
+
+    };
+  </script>
+</body>
+</html>
